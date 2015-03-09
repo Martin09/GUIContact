@@ -1,4 +1,3 @@
-#This is just a test! - Martin
 # -*- coding: utf-8 -*-
 """
 Created on Tue Mar 13 14:45:30 2012
@@ -7,7 +6,6 @@ Created on Tue Mar 13 14:45:30 2012
 """
 import time
 import numpy as np
-#import cv2 as cv
 from cv2 import imread
 from matplotlib import pylab as plt
 from matplotlib.patches import Rectangle,Ellipse,PathPatch
@@ -17,14 +15,25 @@ from copy import deepcopy
 from string import atof,atoi
 import autoContact
 
+#==============================================================================
+#Changelog
+# 06/03/2015 Martin: Added absolute paths checkbox to save absolute paths if you need
+# 06/03/2015 Martin: Added nanowire tracking checkbox for reviewing NWs more quickly
+# 26/02/2015 Martin: In ebeamsettings added more resolutions to MSF and more beam sizes
+# 25/02/2015 Martin: Changed all "== None" to "is None" to avoid future warning
+# 25/02/2015 Martin: Changed autoContact.py to have the option to save absolute paths
+# 24/02/2015 Martin: Fixed the text display bug in GDSGenerator/__getPoly__
+# 23/02/2015 Martin: Added intersectPoint, roundCorners and remove duplcates functions to PatternGenerator.py for help in making patterns
+#==============================================================================
+
 #===============================================================================
-# From there the GUI starts
+# GUI Starts Here
 #===============================================================================
 
 import sys, os
 from PyQt4 import QtGui, QtCore
 
-from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
+from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import Formatter,NullLocator
@@ -40,7 +49,7 @@ latest_changes="""
 #===============================================================================
 # ##TODO:
 # generally use types of tables to avoid incorrect display    
-#     
+#
 #===============================================================================
 class MyCursor(Cursor):
     def __init__(self,ax,pos,statusBar,transForm,**kwargs):
@@ -65,7 +74,7 @@ class MPLCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
-        self.fig.subplots_adjust(left=0.001,right=0.999,top=0.999,bottom=0.001)
+        self.fig.subplots_adjust(left=0.001,right=0.999,top=0.999,bottom=0.001) #Size of displayed image
         self.axes.xaxis.set_major_locator(NullLocator())
         self.axes.yaxis.set_major_locator(NullLocator())
 
@@ -164,6 +173,7 @@ class myFileList(QtGui.QTreeWidget):
     def __init__(self, *args,**kwargs):
         super(myFileList,self).__init__(*args,**kwargs)
         self.setAcceptDrops(True)
+        self.setSortingEnabled(False) #TODO: Sortable file list
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -192,7 +202,13 @@ class myFileList(QtGui.QTreeWidget):
 class ApplicationWindow(QtGui.QMainWindow):
     def __init__(self):
         QtGui.QMainWindow.__init__(self)
-        self.lastImage=None ##TODO: change?
+#        try:
+#            self.lastImage=self.project.paths[index]
+#        except:
+#            self.lastImage=None ##TODO: change?
+        self.lastImage=None ##TODO: change?        
+        self.index=None #For panning to next nanowire
+        self.lastNWIndex=None #For panning to next nanowire   
         self.copyContent = None
         self.imageAnnotations=[]
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
@@ -206,6 +222,8 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.createToolBars()
         self.newProject()
         self.previewCheck.setChecked(True)
+        self.trackNWCheck.setChecked(False)    
+        self.absPathsCheck.setChecked(False)
         self.posPatches=[]
         self.endSelector=None
         
@@ -229,14 +247,14 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.fileName=""
         
     def save(self):
-        if self.project.filename==None:
+        if self.project.filename is None:
             self.saveAs()
 #        try:
         fileName=self.project.filename
         self.project.save(fileName)
         self.fileName=fileName
         self.statusBar().showMessage("Saved '%s'" % fileName)
-        self.appendToLog("Saves '%s'\n" % fileName)
+        self.appendToLog("Saved '%s'\n" % fileName)
         self.setWindowTitle("%s %s - %s"%((progname,progversion,os.path.basename(fileName))))
 #        except Exception as exception:
 #            self.statusBar().showMessage("Error '%s'" % exception, 10000)
@@ -365,6 +383,11 @@ class ApplicationWindow(QtGui.QMainWindow):
                         append.append(fileName)
                         QtGui.QApplication.processEvents()
                 self.__addItems__(append)
+                if len(self.getIndices()) == 0: #If nothing selected, try to set selection to first added picture
+                    try:
+                        self.fileList.setCurrentItem(self.fileList.topLevelItem(0))
+                    except:
+                        pass                        
                 self.updateAll()
                 if len(fileNames) == 1:
                     self.statusBar().showMessage("Added '%s'" % fileNames[0])
@@ -476,17 +499,21 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.updateContactsOption()
         self.updateExposureOptions()
         self.updateFitLogs()
+        self.lastNWIndex = self.index #Save outgoing NW as last NW Index
         indices=self.getIndices()
         if len(indices)==0:
+            self.index = None #Update incoming NW as current NW index             
             self.copyAct.setEnabled(False)
             self.pasteAct.setEnabled(False)
-        elif len(indices)==1:
+        elif len(indices)==1:   
+            self.index = indices[0] #Update incoming NW as current NW index            
             self.copyAct.setEnabled(True)
-            if self.copyContent == None:
+            if self.copyContent is None:
                 self.pasteAct.setEnabled(False)
             else:
                 self.pasteAct.setEnabled(True)
         else:
+            self.index = indices[0] #Update incoming NW as current NW index            
             self.copyAct.setEnabled(True)
             self.pasteAct.setEnabled(True)
 #        t1=time.time()
@@ -497,6 +524,16 @@ class ApplicationWindow(QtGui.QMainWindow):
     
     def previewCheckBoxChanged(self,i):
         self.updateImage()
+        
+    def trackNWCheckBoxChanged(self,i):
+        pass
+#        self.updateImage()    
+        
+    def absPathsCheckBoxChanged(self,i):
+        if self.absPathsCheck.checkState():
+            self.project.changePathType('absolute')
+        else:
+            self.project.changePathType('relative')
     
     def fillWireCombo(self,index):
         self.wireCombo.clear()
@@ -725,7 +762,7 @@ class ApplicationWindow(QtGui.QMainWindow):
     def pasteSettings(self):
         try:
             indices=self.getIndices()
-            if not indices or self.copyContent == None:
+            if not indices or self.copyContent is None:
                 return
             self.project.changeContactOptions(indices,self.copyContent["contact"],self.copyContent["contactOptions"])
             #self.copyContent=None
@@ -750,7 +787,7 @@ class ApplicationWindow(QtGui.QMainWindow):
             action.trigger()
 
     def updateList(self):
-        for n in range(self.fileList.topLevelItemCount ()):
+        for n in range(self.fileList.topLevelItemCount()):
             item = self.fileList.topLevelItem(n)
 #            print "Toplevelitemcount: "+str(n)
             try:
@@ -771,8 +808,9 @@ class ApplicationWindow(QtGui.QMainWindow):
                     item.setText(3,"")
                 contact=self.project.settings[n]["contact"]
                 item.setText(4,contact)
+                item.setText(5,str(n))
             except IndexError:
-                pass #TODO: uggly hack here, solve in a better way
+                pass #TODO: ugly hack here, solve in a better way
             except Exception as exception:
                 self.raiseError(exception)
          
@@ -793,6 +831,7 @@ class ApplicationWindow(QtGui.QMainWindow):
             self.canvas.draw()
             return
         index=self.fileList.indexOfTopLevelItem(items[0])
+#        index = int(items[0].text(5)) ## TODO: From sorting of file list
         for i in range(len(self.imageAnnotations)):
             self.imageAnnotations.pop(0).remove()
 #        self.canvas.axes.clear()
@@ -805,14 +844,14 @@ class ApplicationWindow(QtGui.QMainWindow):
                 self.canvas.axes.imshow(imread(self.project.paths[index]),interpolation="None")
                 self.lastImage=self.project.paths[index]
 #            if items[0].checkState(0):
-            if self.project.settings[index]["cell"]==None:
+            if self.project.settings[index]["cell"] is None:
                 self.canvas.draw()
                 return
-            for pos in self.project.settings[index]["markers"]:
+            for pos in self.project.settings[index]["markers"]: #Draw crosses on markers
                 p=plt.Line2D([pos[0]],[pos[1]],color=[1,0,0],marker="+",ms=5)
                 self.canvas.axes.add_artist(p)
                 self.imageAnnotations.append(p)
-            pos=self.project.settings[index]["center"]
+            pos=self.project.settings[index]["center"] #Draw cross at center of cell
             p=plt.Line2D([pos[0]],[pos[1]],color=[1,0,0],marker="+",ms=10)
             self.canvas.axes.add_artist(p)
             self.imageAnnotations.append(p)
@@ -863,8 +902,51 @@ class ApplicationWindow(QtGui.QMainWindow):
             except:
                 pass
             self.endSelector = None
-            self.lastImage=None
-        self.canvas.draw()
+            self.lastImage=None        
+        
+		#Would like to offset current view when switching nanowires so you can easily click 
+		#through nanowire devices without having to re-zoom for each nanowire.
+		#Partially working, not very exact yet! But good enough for now.
+        if self.lastNWIndex is None:
+            pass
+        elif self.index is None:
+            pass 
+        elif self.lastNWIndex == self.index:
+            pass
+        else:  
+            if self.trackNWCheck.checkState():
+                NW1end1 = self.project.settings[self.lastNWIndex]["end1"]
+                NW1end2 = self.project.settings[self.lastNWIndex]["end2"]
+                proj1Center = self.project.settings[index]["center"]                 
+                NW1center = np.mean([NW1end1,NW1end2],0)*np.array([1,-1])/scale+proj1Center
+                
+                NW2end1 = self.project.settings[index]["end1"]
+                NW2end2 = self.project.settings[index]["end2"]
+                proj2Center = self.project.settings[self.lastNWIndex]["center"]                 
+                NW2center = np.mean([NW2end1,NW2end2],0)*np.array([1,-1])/scale+proj2Center
+                
+                panVector = NW2center-NW1center        
+                            
+#                print "xlim = " + str(self.canvas.axes.get_xlim())
+#                print "ylim = " + str(self.canvas.axes.get_ylim())
+#                print "center = " + str(self.project.settings[index]["center"])
+#                print "PanVector = " + str(panVector) + "\n"                                  
+                   
+                self.canvas.axes.set_xlim(self.canvas.axes.get_xlim()+panVector[0])
+                self.canvas.axes.set_ylim(self.canvas.axes.get_ylim()+panVector[1])
+                #plt.axis([0,5,0,10])
+                #self.canvas.axes.xaxis()
+                
+#                pos=NW2center*np.array([1,-1])/scale+proj2Center #Draw cross on NW center
+#                p=plt.Line2D([pos[0]],[pos[1]],color=[1,0,0],marker="+",ms=10)
+#                self.canvas.axes.add_artist(p)
+#                self.imageAnnotations.append(p)                
+                
+                
+            else:
+                self.canvas.axes.reset_position()
+        
+        self.canvas.draw()        
     
     def fileSelectionChanged(self):
         self.updateAll()
@@ -888,7 +970,7 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.viewMenu.addAction(dock.toggleViewAction())
         self.fileList.setRootIsDecorated(False)
         self.fileList.setAlternatingRowColors(True)
-        self.fileList.setHeaderLabels(["File","Cell","Block","Mode","Contact"])
+        self.fileList.setHeaderLabels(["File","Cell","Block","Mode","Contact","Index"])
         self.fileListWidget.setCentralWidget(self.fileList)
         self.fileList.setSelectionMode(3)
         self.fileList.setTextElideMode(QtCore.Qt.ElideLeft)
@@ -953,7 +1035,13 @@ class ApplicationWindow(QtGui.QMainWindow):
                 self.mpl_toolbar.removeAction(action)
         self.previewCheck=QtGui.QCheckBox("Preview")
         self.previewCheck.stateChanged.connect(self.previewCheckBoxChanged)
+        self.trackNWCheck=QtGui.QCheckBox("NW Tracking")
+        self.trackNWCheck.stateChanged.connect(self.trackNWCheckBoxChanged)        
+        self.absPathsCheck=QtGui.QCheckBox("Save Absolute Paths")
+        self.absPathsCheck.stateChanged.connect(self.absPathsCheckBoxChanged) 
         self.mpl_toolbar.addWidget(self.previewCheck)
+        self.mpl_toolbar.addWidget(self.trackNWCheck)
+        self.mpl_toolbar.addWidget(self.absPathsCheck)        
         self.mpl_toolbar.setMovable(False)
         self.imageWidget.addToolBar(self.mpl_toolbar)
         self.imageWidget.setCentralWidget(self.canvas)
@@ -1184,12 +1272,15 @@ if __name__ == "__main__":
     
     aw = ApplicationWindow()
     aw.show()
-    #aw.__addFiles__([r'D:\Measurements\OriginalData\Optical@Z1CMI\CT30368\0368.JPG'])
+#    aw.__addFiles__([r'D:\Dropbox\MasterThesis\Software\myContacting\image_141215_004.JPG'])
+#    aw.__addFiles__([r'D:\Dropbox\MasterThesis\Software\myContacting\140423B_140918_019.JPG'])
     #aw.__addFiles__([r'D:\Measurements\OriginalData\Optical@Z1CMI\CT30368\03680031.JPG'])
     #aw.project.changeContactType([0],"Bent Contact CPW")
     #aw.project.changeContactType([1],"Bent Contact CPW")
-    #aw.fileList.setCurrentIndex(aw.fileList.model().index(0,0))
+#    aw.fileList.setCurrentIndex(aw.fileList.model().index(0,0))
     #aw.autoExport()
+    
+    
     sys.exit(qApp.exec_())
     qApp.exec_()
 #

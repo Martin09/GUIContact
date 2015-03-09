@@ -8,8 +8,8 @@ Created on Tue Mar 13 14:45:30 2012
 import time
 import numpy as np
 import numexpr as ne
-#import cv2 as cv
 import cv2
+import cv2.cv as cv
 from matplotlib import pylab as plt
 from matplotlib.patches import Rectangle
 from matplotlib import transforms as MPLTransforms
@@ -21,6 +21,12 @@ from PatternGenerator import GDSGeneratorVersion
 version="0.981"
 latest_changes="""allowed to detect more than one circle per bit --> inverse markers
 """
+
+#v0.982 - Martin Friedl - (Not Implemented Yet)
+#-Added Gaussian blur to median blur function
+#-Adaptive threshold constant from -10 to -15 (more aggressive)
+#-Turned on flood filling by default to compensate
+
 
 ##TODO make all these object more efficient / 
 class WireObject(object):
@@ -174,7 +180,7 @@ class ImageObject(object):
             else:
                 raise TypeError("Unknown type")
         self.bits=np.array([bitx,bity])
-        if bitTolerance == None:
+        if bitTolerance is None:
             self.bitTolerance=descriptor.markerSize
         else:
             self.bitTolerance=bitTolerance
@@ -199,7 +205,7 @@ class ImageObject(object):
     shape = property(__get_shape__,__set_shape__)
     
     def __get_IMG_input__(self):
-        if self.__IMG_input__ == None:
+        if self.__IMG_input__ is None:
             return self.IMG_gray
         else:
             return self.__IMG_input__
@@ -208,8 +214,8 @@ class ImageObject(object):
         raise RuntimeError("not allowed")
         
     def __get_IMG_gray__(self):
-        if self.__IMG_gray__ == None:
-            if self.__filename__ == None:
+        if self.__IMG_gray__ is None:
+            if self.__filename__ is None:
                 raise RuntimeError("missing filename")
             else:
                 self.__load__()
@@ -231,7 +237,7 @@ class ImageObject(object):
         return self.__desc__
         
     def __set_desc__(self,descriptor):
-        if descriptor == None:
+        if descriptor is None:
             self.__desc__=Descriptor()
         else:
             self.__desc__=descriptor
@@ -256,7 +262,7 @@ class ImageObject(object):
         
     def reduceMemoryFoodPrint(self,toggle=True):
         if toggle:
-            if self.__filename__==None:
+            if self.__filename__ is None:
                 raise RuntimeError("not possible if not initialized with path")
             else:
                 self.__IMG_gray__=None
@@ -265,16 +271,18 @@ class ImageObject(object):
         
     
     def getMedian(self,image=None,ksize=3,**kwargs):
-        if image==None:
+        if image is None:
             image=self.IMG_gray
         timage=deepcopy(image)
         timage2 = cv2.medianBlur(timage,ksize)
         return timage2
-#        timage3 = cv2.equalizeHist(timage2)
+#        timage3 = cv2.GaussianBlur(timage2,(ksize,ksize),sigmaX=1,sigmaY=1)
 #        return timage3
+#        timage4 = cv2.equalizeHist(timage3)
+#        return timage4
         
     def getBinary(self,image=None,what=None,**kwargs):
-        if image==None:
+        if image is None:
             image=self.IMG_gray
         timage=deepcopy(image)
 #        timage=cv2.equalizeHist(timage)
@@ -287,7 +295,7 @@ class ImageObject(object):
         return img_bin
         
     def getFloodFilled(self,image=None,newVal=255,seedPoint=(0,0),**kwargs):
-        if image==None:
+        if image is None:
             image=self.IMG_gray
         timage=deepcopy(image)
         h,w = timage.shape[:2]
@@ -296,7 +304,7 @@ class ImageObject(object):
         return floodfilled[1:-1,1:-1]
         
     def getMorphed(self,image=None,dilate=True,erode=True,dilateIter=3,erodeIter=3,kernel=(5,5),**kwargs):
-        if image==None:
+        if image is None:
             image=self.IMG_gray
         timage=deepcopy(image)
         kernel = cv2.getStructuringElement(cv2.MORPH_DILATE,kernel)
@@ -355,7 +363,24 @@ class ImageObject(object):
         else:
             pre=binary
         return self.getMorphed(pre,**kwargs)
-    
+
+    def circsToContours(self,circleVals=None, numPoints=20,**kwargs):
+        #Takes array of circles defined as [x,y,radius] and turns them into contours
+        contours = []
+        if circleVals is None:
+            return contours
+        for i in circleVals[0,:]:
+            cx = i[0] #Circle center x coordinate
+            cy = i[1] #Circle center y coordinate
+            r = i[2] #Circle radius
+            #Initialize the coordinates array for number of points needed        
+            coordinates=np.zeros([numPoints,1,2],dtype=np.int32)
+            for j in xrange(0,numPoints): #Loop over the points we want
+                 x = cx + r * np.cos(j*2*np.pi/numPoints)
+                 y = cy + r * np.sin(j*2*np.pi/numPoints)
+                 coordinates[j,:,:]=[x,y]             
+            contours.append(coordinates)
+        return contours    
 
     def findContours(self,image,**kwargs):
         timage=deepcopy(image)
@@ -377,12 +402,19 @@ class ImageObject(object):
         else:
             return allCircles
     
-    def findMarkers(self,image=None,**kwargs):
+    def findMarkers(self,image=None, method = 'default',**kwargs):
         t0=time.time()
-        prep=self.prepareDetection(image,**kwargs)
+        prep=self.prepareDetection(image,False,**kwargs)
         t1=time.time()
         contours=self.findContours(prep,**kwargs)
-#        print str(len(contours)) +" contours found"
+#        print str(len(contours)) +" contours found"              
+        if method == 'HoughCircles': #Using Hough transform to find circular contours
+            gray = self.IMG_gray
+            cv2.drawContours(gray, contours, -1,(0,255,0), 1) #Draw contours onto image  
+            #Call function to find circles, if not working, should calibrate param2           
+            circles=cv2.HoughCircles(gray,cv.CV_HOUGH_GRADIENT,1,65,param1=100,param2=14,minRadius=28,maxRadius=35)
+            contours=self.circsToContours(circles,20)         
+            
         circles,noncircles=self.findCircles(contours,retResiduals=True,**kwargs)
 #        print str(len(circles)) +" circles found"
 
@@ -407,7 +439,7 @@ class ImageObject(object):
         
     def findNanowires(self,image=None,minLength=5):
         t0=time.time()
-        if image == None:
+        if image is None:
             image=self.IMG_gray
 #        thresh=self.meanThresh(image)
         t1=time.time()
@@ -489,8 +521,7 @@ class ImageObject(object):
         self.transForm=transForm
         self.invTransForm=invTransForm
         d={"center":center,"angle":angle,"scale":scale,"transForm":transForm,"invTransForm":invTransForm,
-           "std":{"center":stdCenter,"angle":stdAngle,"scale":stdScale}
-            }
+           "std":{"center":stdCenter,"angle":stdAngle,"scale":stdScale}}
         return string
             
     def calcCircleCoordinates(self,circles,**kwargs):
@@ -577,7 +608,7 @@ class ImageObject(object):
     
     def showImage(self,ax):
         ax.imshow(self.IMG_input,interpolation="none",cmap="gray")
-#
+
 #fn=r"D:\transfer\test Daniel\13.jpg"
 #a=cv2.imread(fn,0)            
 ##print a

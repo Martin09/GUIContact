@@ -27,7 +27,7 @@ class CjobFile(object):
         return self.__desc__
         
     def __set_desc__(self,descriptor):
-        if descriptor == None:
+        if descriptor is None:
             self.__desc__=Descriptor()
         else:
             self.__desc__=descriptor
@@ -96,7 +96,7 @@ class CjobFile(object):
         
     def getExposure(self,name,plugins,camp=0,useCAMP=None,negativeMarker=False):
         camp=int(camp)
-        if useCAMP == None:
+        if useCAMP is None:
             useCAMP=self.descriptor.campSets
         for j in useCAMP:
             for i in j:

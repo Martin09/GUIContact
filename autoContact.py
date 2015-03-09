@@ -28,7 +28,7 @@ sys.path.append("./plugins/")
 from Patterns import *
 import EbeamSettings
 
-version = "0.982"
+version = "0.983"
 latest_changes="""
 0.982: no error if an option in pattern is not existing: uses default then
 0.981: introduces MSF for LB, takes it from EbeamSettings.py
@@ -41,6 +41,7 @@ class ContactProject(object):
     def __init__(self,descriptor=Descriptor(),):
         self.version=version
         self.filename=None
+        self.pathType="relative"
         self.paths=[]
         self.settings=[]
         self.exposure=set()
@@ -140,7 +141,12 @@ class ContactProject(object):
         
     def save(self,filename):
         self.version=version
-        p=[os.path.relpath(path,os.path.dirname(filename)) for path in self.paths]
+        if self.pathType == "relative":
+            p=[os.path.relpath(path,os.path.dirname(filename)) for path in self.paths] #Relative Paths
+        elif self.pathType == "absolute":
+            p=[path for path in self.paths] #Absolute paths
+        else:
+            raise ValueError("Unknown path type: "+self.pathType)
         tar=tarfile.open(filename,mode="w:bz2")
         string1=dumper.dumps(p)
         info1 = tarfile.TarInfo(name="paths")
@@ -176,7 +182,7 @@ class ContactProject(object):
         self.saved=True
         
     def __idsToList__(self,imageIDs=None):
-        if imageIDs == None:
+        if imageIDs is None:
             imageIDs = range(len(self.paths))
         elif imageIDs == -1:
             imageIDs = [len(self.paths)-1]
@@ -306,6 +312,14 @@ class ContactProject(object):
         options=self.getContactOptions(contactName)
         self.changeContactOptions(imageIDs,contactName,options)
         self.updateLayers()
+        
+    def changePathType(self,pathType):        
+        if pathType == "absolute":
+            self.pathType = "absolute"
+        elif pathType == "relative":
+            self.pathType = "relative"
+        else: 
+            raise ValueError("Unknown path type: "+pathType)
         
     def getContactOptions(self,contactName):
         obj=self.allPatterns[contactName]("test")
@@ -556,7 +570,7 @@ class ContactProject(object):
             string+="Filename: "+os.path.basename(self.paths[i])+"\n"
             imag=ImageObject(self.paths[i],descriptor=self.descriptor)
             string+=imag.findMarkers()
-            if imag.cell == None:
+            if imag.cell is None:
                 self.settings[i]["cell"]=None
                 return string
             string+=imag.findNanowires()
@@ -586,7 +600,7 @@ class ContactProject(object):
         return self.descriptor.createTransformFunc(center,angle,scale)
         
     def __repr__(self):
-        if self.filename == None:
+        if self.filename is None:
             f=""
         else:
             f=self.filename+", "
@@ -652,7 +666,7 @@ $$"$$
 cwd=os.getcwd()
 if options.userid == "":
     founduser=re.match(r"/home/cad/data/([a-z]+)/.*",os.getcwd()+"/")
-    if founduser == None:
+    if founduser is None:
         raise RuntimeError("no user name found, please use the -u option")
     user=founduser.groups()[0]
     print "Username found, using: " + user
@@ -764,7 +778,7 @@ $$"$$
 cwd=os.getcwd()
 if options.userid == "":
     founduser=re.match(r"/home/lb/users/([a-z]+)/.*",os.getcwd()+"/")
-    if founduser == None:
+    if founduser is None:
         raise RuntimeError("no user name found, please use the -u option")
     user=founduser.groups()[0]
     print "Username found, using: " + user

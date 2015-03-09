@@ -18,8 +18,6 @@ from Settings import colorMap as cmSet
 version="0.970"
 pat1=re.compile(".+\.([a-zA-Z0-9_]+)'>.*")
 
-
-
 def f(xy):
     return xy
     
@@ -145,7 +143,7 @@ class Structure(Element):
         return struct
     
     def getAllStructures(self,typ=None):
-        if typ == None:
+        if typ is None:
             return self.__getAllStruct__()[1:]
         elif isinstance(typ,type):
             l=[]
@@ -184,7 +182,7 @@ class Structure(Element):
                 if res == element:
                     return True
             return False
-     ### DOES NOT CORREcT DUPLICATE NAMES CORRECTLY!!!!!!!!!!!!!!!!!!!   
+     ### DOES NOT CORRECT DUPLICATE NAMES CORRECTLY!!!!!!!!!!!!!!!!!!!   
     def insertElement(self,element,layer=None,xy=(0,0),angle=0,mag=1):
         """Layer must be given for Pattern objects. 
         For Stuctures, layer=None uses the individual layer for each child
@@ -194,7 +192,7 @@ class Structure(Element):
             if self.duplicateStructure(element):
                 raise RuntimeError("Duplicate Structurename")
         elif isinstance(element,Pattern):
-            if layer == None and self.__layer__ == None:
+            if layer is None and self.__layer__ is None:
                 raise ValueError("You must specify a layer for pattern objects if none is given for the structure")
         elif isinstance(element,type(None)):
             return
@@ -220,11 +218,11 @@ class Structure(Element):
         return ext
         
     def getLayers(self,layer=None):
-        if layer == None and self.__layer__ != None:
+        if layer is None and self.__layer__ != None:
             layer = self.__layer__
         layers=set()
         for child in self.__childs__:
-            if layer == None:
+            if layer is None:
                 l = child["layer"]
             else:
                 l = layer
@@ -237,10 +235,10 @@ class Structure(Element):
         struct=gdsiiStruct(self.name)
         if not self.name in [i.name for i in lib]:
             lib.append(struct)
-        if layer == None and self.__layer__ != None:
+        if layer is None and self.__layer__ != None:
             layer = self.__layer__
         for child in self.__childs__:
-            if layer == None:
+            if layer is None:
                 l = child["layer"]
             else:
                 l = layer
@@ -265,12 +263,12 @@ class Structure(Element):
         f.close()        
     
     def show(self,ax,xy=(0,0),angle=0,mag=1,layer=None,pltTransform=f,maxRegion=2.,cmap=colorMap(),**kwargs):
-        if layer == None and self.__layer__ != None:
+        if layer is None and self.__layer__ != None:
             layer = self.__layer__
         rot=rotMatrix(angle)
         annotations=[]
         for child in self.__childs__:
-            if layer == None:
+            if layer is None:
                 l = child["layer"]
             else:
                 l = layer
@@ -450,10 +448,10 @@ class Array(Element):
 
 class Polygon(Pattern):
     def __init__(self,points,**kwargs):
-        if isinstance(points,list):
+        if isinstance(points[0],list):
             if points[0]!=points[-1]:
                 points=points+[points[0]]
-        elif isinstance(points,np.ndarray):
+        elif isinstance(points[0],np.ndarray):
             if np.any(points[0]!=points[-1]):
                 points=np.vstack((points,points[0]))
                 points=points.tolist()+[points[0].tolist()]
@@ -496,10 +494,10 @@ class Polygon(Pattern):
         return np.array([[min_x,max_x],[min_y,max_y]])
         
     def __getGDS__(self,lib,xy=(0,0),angle=0,mag=1,layer=None,datatype=None,unitsfact=1E3,**kwargs):
-        if layer == None:
+        if layer is None:
             raise ValueError("Layer can not be None")
         points=self.__calcPoints__(xy=xy,angle=angle,mag=mag,unitsfact=unitsfact)
-        if datatype == None:
+        if datatype is None:
             datatype=layer
 #        points_ar=np.array(points)
 #        points=np.where(abs(points_ar)>1E-10,points_ar,np.zeros(points_ar.shape))
@@ -508,7 +506,7 @@ class Polygon(Pattern):
         return [elem]
     
     def getLayers(self,layer=None):
-        if layer == None:
+        if layer is None:
             raise ValueError("Layer can not be None")
         return set([layer])
         
@@ -516,7 +514,6 @@ class Polygon(Pattern):
     def show(self,ax,xy=(0,0),angle=0,mag=1,layer=None,pltTransform=f,maxRegion=2.,cmap=colorMap(),**kwargs):
         points=self.__calcPoints__(xy=xy,angle=angle,mag=mag,unitsfact=1.)
 #        if isinstance(self,Rectangle):
-#            print points
 #            print points
         points=pltTransform(points)
         #TODO: Reimplement
@@ -644,10 +641,10 @@ class Path(Polygon):
             raise ValueError("invalid format for points")
             
     def __getGDS__(self,lib,xy=(0,0),angle=0,mag=1,layer=None,datatype=None,unitsfact=1E3,**kwargs):
-        if layer == None:
+        if layer is None:
             raise ValueError("Layer can not be 0")
         points=self.__calcPoints__(xy=xy,angle=angle,mag=mag,unitsfact=unitsfact)
-        if datatype == None:
+        if datatype is None:
             datatype=layer
         elem = Elements.Path(layer,datatype,points)
         return [elem]
@@ -715,12 +712,12 @@ class Text(Pattern):
         return not self.__eq__(other)
         
     def getLayers(self,layer=None):
-        if layer == None:
+        if layer is None:
             raise ValueError("Layer can not be None")
         return set([layer])
                        
     def __getPoly__(self,xy=(0,0),angle=0,mag=1,layer=None,datatype=None,**kwargs):
-        height=self.height  *mag
+        height=self.height*mag
         lines = self.text.split("\n")
         #print type(height)
         #print type(self.__gL__.width)
@@ -732,31 +729,30 @@ class Text(Pattern):
         dy=np.array([0,height*(1.+self.spacing)])
         dx=np.dot(rot,dx)
         dy=np.dot(rot,dy)
+
+        maxX=maxLength #Martin: Modified this section to fix text display bug
+        maxY=height*len(lines)+(len(lines)-1)*height*self.spacing
         
-        topright=np.array([maxLength,height*len(lines)+(len(lines)-1)*height*self.spacing])
-        topright=np.dot(rot,topright)
-        bottomright=np.array([maxLength,0])
-        bottomright=np.dot(rot,bottomright)
-        topleft=np.array([0,height*len(lines)+(len(lines)-1)*height*self.spacing])
-        topleft=np.dot(rot,topleft)
-        px=np.array([i[0] for i in topright,bottomright,topleft])
-        py=np.array([i[1] for i in topright,bottomright,topleft])
         if self.va == "center":
-            y0=-topright[1]/2.
+            y0=-maxY/2.
         elif self.va == "top":
-            y0=-py[np.argmax(abs(py))]
+            y0=-maxY
         elif self.va == "bottom":
-            y0=py[np.argmin(abs(py))]
+            y0=0
         else:
             raise ValueError('use va=["top","center","bottom"]')
         if self.ha == "center":
-            x0=-topright[0]/2.
+            x0=-maxX/2.
         elif self.ha == "right":
-            x0=-px[np.argmax(abs(px))]
+            x0=-maxX
         elif self.ha == "left":
-            x0=px[np.argmin(abs(px))]
+            x0=0
         else:
             raise ValueError('use ha=["left","center","right"]') 
+        shift=np.dot(rot,np.array([x0,y0]))
+        x0=shift[0]
+        y0=shift[1]
+            
         poly=[]
         for n,line in enumerate(lines[::-1]):
             for m,glyph in enumerate(line):
@@ -764,7 +760,7 @@ class Text(Pattern):
                     pass
                 elif not self.__gL__.has_key(glyph):
                     temp=sorted(self.__gL__.keys())
-                    raise ValueError("'"+glyph +"' not allowd. Please use only symbols in:" + str(temp))
+                    raise ValueError("'"+glyph +"' not allowed. Please use only symbols in:" + str(temp))
                 else:
                     for points in self.__gL__[glyph]:
                         points2=np.dot(points.copy(),rot.T)*height
@@ -772,7 +768,6 @@ class Text(Pattern):
                         points2[:,1]+=(m*dx[1]+n*dy[1]+y0+xy[1])
                         points2=points2
                         poly.append(Polygon(points2))
-                        ##TODO
         return poly
 
     def calcExtents(self,xy=(0,0),angle=0,mag=1,**kwargs):
@@ -790,9 +785,9 @@ class Text(Pattern):
         
         
     def __getGDS__(self,lib,xy=(0,0),angle=0,mag=1,layer=None,datatype=None,unitsfact=1E3,**kwargs):
-        if layer == None:
+        if layer is None:
             raise ValueError("Layer can not be 0")
-        if datatype == None:
+        if datatype is None:
             datatype=layer
 #        print "--------GDS"
 #        print "angle",angle
@@ -804,7 +799,7 @@ class Text(Pattern):
         return gds
                 
     def show(self,ax,xy=(0,0),angle=0,mag=1,layer=None,pltTransform=f,maxRegion=2.,cmap=colorMap(),**kwargs):
-        if layer == None:
+        if layer is None:
             raise ValueError("Layer can not be 0")
 #        print "--------show"
 #        print "angle",angle

@@ -20,8 +20,8 @@ sys.path.insert(0, "../SysFiles")
 def rmdir_recursive(dir, keep=[]): 
     """Remove a directory, and all its contents if it is not already empty.""" 
 
-    print >>sys.__stdout__,'> Removing files in directory :' + dir + ',keeping protected files...' 
-    print '> Removing files in directory :' + dir + ',keeping protected files...' 
+    print >>sys.__stdout__,'> Removing files in directory :' + dir + ', keeping protected files...' 
+    print '> Removing files in directory :' + dir + ', keeping protected files...' 
     for name in os.listdir(dir): 
         if name not in keep: 
             full_name = os.path.join(dir, name) 
@@ -37,7 +37,7 @@ def rmdir_recursive(dir, keep=[]):
             print >>sys.__stdout__,'> keeping ' + name + ' in ' + dir 
             print '> keeping ' + name + ' in ' + dir 
     if keep == []: 
-        print >>sys.__stdout__,'> Removing directory :' + dir + 'because no file asked to be kept.' 
+        print >>sys.__stdout__,'> Removing directory :' + dir + ' because no file asked to be kept.' 
         print '> Removing directory :' + dir + 'because no file asked to be kept.' 
         os.rmdir(dir) 
 
@@ -50,18 +50,22 @@ except:
 
 
 opts = { 
-    'py2exe': { "compressed": 1, 
-                "optimize": 1, 
+    'py2exe': { 'compressed': 1, 
+                'optimize': 1, 
                 #"ascii": 1, 
-                "includes":["sip"],
-                "bundle_files": 3, 
-               'packages' : ["matplotlib.backends.backend_qt4agg", 
+                'includes':['sip'],
+                'bundle_files': 3, #1 = bundle all, 2 = all but python interpreter, 3 = none
+               'packages' : ['matplotlib.backends.backend_qt4agg',
+                             'matplotlib.backends.backend_tkagg',
+                             'numexpr',
+                             'FileDialog',
+                             'shapely.geometry',
 #                              # "matplotlib.numerix.fft", 
 #                              # "matplotlib.numerix.linear_algebra", 
 #                              # "matplotlib.numerix.random_array", 
 #                              # "matplotlib.numerix.ma" 
                              ], 
-                'excludes': ['_tkinter',
+                'excludes': [#'_tkinter',
                              'Patterns',
                 #             '_gtkagg', '_tkagg', '_agg2', '_cairo', '_cocoaagg', 
                 #             '_fltkagg', '_gtk', '_gtkcairo','_backend_gdk', 
@@ -70,9 +74,9 @@ opts = {
                              ], 
                 'dll_excludes': ['tk84.dll', 
                                  'tcl84.dll', 
-                                  'MSVCP90.dll',
-                                'libgdk_pixbuf-2.0-0.dll', 
-                                'libgdk-win32-2.0-0.dll', 
+                                 'MSVCP90.dll',
+                                 'libgdk_pixbuf-2.0-0.dll', 
+                                 'libgdk-win32-2.0-0.dll', 
                 #                 'libgobject-2.0-0.dll', 
                 #                 'libgtk-win32-2.0-0.dll', 
                 #                 'libglib-2.0-0.dll', 
@@ -83,8 +87,6 @@ opts = {
                 #                 'libglade-2.0-0.dll', 
                 #                 'libgmodule-2.0-0.dll', 
                 #                 'libgthread-2.0-0.dll', 
-                #                 'tk84.dll', 
-                #                 'tcl84.dll', 
                                   ] 
               } 
        } 
@@ -102,6 +104,7 @@ print "Allpngs "+str(allpngs)
                         # 'images/mainIcon.png']),
 data_files.extend([('images', allpngs),
                    ('ressources', ["ressources/lib_glyphs.gds"]),
+                   ('.',["ressources/geos_c.dll"]), #Required for shapely 
                    ('plugins', ["plugins/Patterns.py","plugins/EbeamSettings.py"]),
             ])
 

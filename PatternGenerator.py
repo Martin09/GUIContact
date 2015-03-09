@@ -71,7 +71,7 @@ class EmptyDesc(object):
 #        self.defBeta=defBeta
 #        self.defEta=defEta
         self.maxMarker=maxMarker
-        if campSets == None:
+        if campSets is None:
             self.campSets=[[(0,0),(1,0),(0,1),(1,1)],
                       [(2,0),(3,0),(2,1),(3,1)],
                       [(0,2),(1,2),(0,3),(1,3)],
@@ -100,11 +100,11 @@ class Descriptor(EmptyDesc):
         return kwargs
         
     def getBits(self,cell):
-            zero=[-self.markerArea[i]/2. for i in [0,1]]
+            zero=[-self.markerArea[i]/2. for i in [0,1]] #Gets middle of marker area(?)
             bitx=[int(i) for i in bin(int(cell[0]))[::-1][:-2]]
             bity=[int(i) for i in bin(int(cell[1]))[::-1][:-2]]
-            s0=int(np.log2(self.cellsPerBlock[0]*self.noBlocks[0]))
-            s1=int(np.log2(self.cellsPerBlock[1]*self.noBlocks[1]))
+            s0=int(round(np.log2(self.cellsPerBlock[0]*self.noBlocks[0]),0)) #Found bug in integer conversion here
+            s1=int(round(np.log2(self.cellsPerBlock[1]*self.noBlocks[1]),0))    
             for i in range(s0-len(bitx)):
                 bitx.append(0)
             for i in range(s1-len(bity)):
@@ -172,7 +172,7 @@ class Structure(Struct):
         return self.__desc__
         
     def __set_desc__(self,descriptor):
-        if descriptor == None:
+        if descriptor is None:
             self.__desc__=Descriptor()
         else:
             self.__desc__=descriptor
@@ -213,7 +213,7 @@ class Template(Structure):
         P2=np.array(P2)
         o1=(P0-P1)/np.sqrt(np.dot(P0-P1,P0-P1))
         o2=(P2-P1)/np.sqrt(np.dot(P2-P1,P2-P1))
-        if np.arcsin(np.cross(o1,o2)) > 0:
+        if np.arcsin(np.round(np.cross(o1,o2),14)) > 0:
             a=1.
             b=-1.
         else:
@@ -227,7 +227,14 @@ class Template(Structure):
         b=dv
         x=np.linalg.solve(a,b)
         circleCenter= P1+x[0]*o1+v1
-        angle = np.arcsin(np.cross(v2/R,v1/R))
+
+        crossProd = np.cross(v2/R,v1/R); #Avoid errors of arcsin(1.00002)
+        if crossProd > 1:
+            crossProd = 1;
+        elif crossProd < -1:
+            crossProd = -1
+        angle = np.arcsin(crossProd)
+
         points=[]
         for i in range(n+1):
             x=-i*angle/n
@@ -235,6 +242,49 @@ class Template(Structure):
                              [np.sin(x),np.cos(x)]])
             points.append(circleCenter+np.dot(rot,-v1))
         return points
+
+    def removeDuplicates(self,seq):
+        seen = set()
+        seen_add = seen.add
+        return [ x for x in seq if not (x in seen or seen_add(x))]              
+
+    def roundCorners(self,points,cRadius,n=20):
+        if cRadius == 0:
+            return points
+        points=[(p[0],p[1]) for p in points] #Convert points to list     
+        points = self.removeDuplicates(points)
+        newpoints = []
+        tmpPoints = [points[-1]]+points+[points[0]]
+        self.getCurvePoints(tmpPoints[2],tmpPoints[3],tmpPoints[4],cRadius,n)
+        for i in xrange(1,len(points)+1):
+            newpoints.extend(self.getCurvePoints(tmpPoints[i-1],tmpPoints[i],tmpPoints[i+1],cRadius,n))
+            #newpoints.extend()
+        return newpoints   
+        
+    def intersectPoint(self,p11,p12,p21,p22):
+        #Gets the point of intersection of two lines, each defined by two points
+        x11=p11[0]
+        y11=p11[1]
+        x12=p12[0]
+        y12=p12[1]
+        x21=p21[0]
+        y21=p21[1]
+        x22=p22[0]
+        y22=p22[1]
+        if(x12-x11)==0:#Avoid division by zero
+            x12 = x12+0.000001
+        if(x22-x21)==0:#Avoid division by zero
+            x22 = x22+0.000001            
+        slope1=(y12-y11)/(x12-x11)
+        yint1=y12-slope1*x12
+        slope2=(y22-y21)/(x22-x21)
+        yint2=y22-slope2*x22
+        
+        if (slope2-slope1)==0:#Avoid division by zero
+            slope2 = slope2 + 0.00001
+        intersectX = (yint1-yint2)/(slope2-slope1)
+        intersectY = slope1*intersectX+yint1
+        return [[intersectX,intersectY]]
         
 
 class NanoWireTemplate(Template):
@@ -292,9 +342,6 @@ class NanoWireTemplate(Template):
                 options.pop(key)
         return options
         
-        
-
-
 class Cell(Structure):
     def __init__(self,cell,**kwargs):
         super(Cell,self).__init__("",**kwargs)
@@ -420,7 +467,7 @@ class Cell(Structure):
         mx=max(abs(ext[0]).max(),frame[0][1])*1.3
         my=max(abs(ext[1]).max(),frame[1][1])*1.3
         points=[[mx,my],[-mx,my],[-mx,-my],[mx,-my],[mx,my]]
-        if self.EXTENTS==None:
+        if self.EXTENTS is None:
             self.EXTENTS=Structure(self.name+"_ext")
             self.EXTENTS.insertElement(Polygon(points),layer=self.descriptor.commentLayer)
         else:
@@ -450,7 +497,7 @@ class Block(Cell):
         else:
             xy=np.zeros(2)
         if isinstance(element,type(self)):
-            raise TypeError("Cent't insert a "+str(element)+" into "+str(self))
+            raise TypeError("Cant't insert a "+str(element)+" into "+str(self))
         elif isinstance(element,Cell):
             pos=xy+element.getPosInParent()
         else:
@@ -705,4 +752,4 @@ class FlexiPattern(Block):
 #a.save("test.gds")
 #ac.save("test2.gds")
 #
-##print CELL.insertExtents()
+##s CELL.insertExtents()
