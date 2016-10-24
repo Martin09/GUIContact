@@ -8,12 +8,13 @@ import os
 import tarfile
 import shutil
 import tempfile
+import numpy as np
 #import json as dumper
 import pickle as dumper
 import StringIO
 from autoDetect import Descriptor
 from autoDetect import ImageObject
-from createCJOB import CjobFile,CincFile,FtxtFile
+from createCJOB import CjobFile, CincFile, FtxtFile
 import re
 import time
 
@@ -29,29 +30,29 @@ from Patterns import *
 import EbeamSettings
 
 version = "0.983"
-latest_changes="""
+latest_changes = """
 0.982: no error if an option in pattern is not existing: uses default then
 0.981: introduces MSF for LB, takes it from EbeamSettings.py
 0.981: multiple layers considered in PEC if the same camps settting is chosen
 """
-pat1=re.compile(".+\.([a-zA-Z0-9_]+)'>.*")
+pat1 = re.compile(".+\.([a-zA-Z0-9_]+)'>.*")
 
 
 class ContactProject(object):
-    def __init__(self,descriptor=Descriptor(),):
-        self.version=version
-        self.filename=None
-        self.pathType="relative"
-        self.paths=[]
-        self.settings=[]
-        self.exposure=set()
-        self.fitLogs=[]
-        self.imageObjects=[]
-        self.descriptor=descriptor
-        self.saved=False
-        self.allPatterns=allPatterns
-        self.defaultPattern=defaultPattern
-        self.exposureSettings={"layer":set(),"dose":{},"beam":{},"res":{},"mPEC_beamsize":{},
+    def __init__(self, descriptor=Descriptor(), ):
+        self.version = version
+        self.filename = None
+        self.pathType = "relative"
+        self.paths = []
+        self.settings = []
+        self.exposure = set()
+        self.fitLogs = []
+        self.imageObjects = []
+        self.descriptor = descriptor
+        self.saved = False
+        self.allPatterns = allPatterns
+        self.defaultPattern = defaultPattern
+        self.exposureSettings = {"layer":set(),"dose":{},"beam":{},"res":{},"mPEC_beamsize":{},
                                "camps":{},"doPEC":{},"beta":{},"eta":{},"multiPEC":{},
                                 "ignoreHeightError":{},"MSF":{},"PECLayers":{},"negativeMarker":{}}
 #                               "camps":{},"doPEC":{},"alpha":{},"beta":{},"eta":{}}
@@ -61,6 +62,8 @@ class ContactProject(object):
         self.MSF=EbeamSettings.MSF
         self.minRes=EbeamSettings.minRes
         self.maxRes=EbeamSettings.maxRes
+        self.minNWLen=3
+        self.maxNWLen=10
 
     def getPECLayers(self,layer):
         CAMP=self.exposureSettings["camps"][layer]
@@ -360,11 +363,12 @@ class ContactProject(object):
     def showCell(self,ax,imageID,contact=Pt2Contacts,fitextents=False,**kwargs):
         if self.settings[imageID]["fit"]:
             CELL=Cell(self.settings[imageID]["cell"],descriptor=self.descriptor)
-            for m,wire in enumerate(self.settings[imageID]["wires"]):
-                nw=NanoWire("C"+CELL.name[5:]+"_wire_%d"%m,end1=wire["end1"],
-                                            end2=wire["end2"],width=wire["w"],text="W_%d"%m)
-                nw.make()
-                CELL.insertElement(nw)
+#Martin: don't add nanowires to GDS output to reduce file size
+#            for m,wire in enumerate(self.settings[imageID]["wires"]):
+#                nw=NanoWire("C"+CELL.name[5:]+"_wire_%d"%m,end1=wire["end1"],
+#                                            end2=wire["end2"],width=wire["w"],text="W_%d"%m)
+#                nw.make()
+#                CELL.insertElement(nw)
             end1=self.settings[imageID]["end1"]
             end2=self.settings[imageID]["end2"]
             obj=self.allPatterns[self.settings[imageID]["contact"]]
@@ -416,11 +420,12 @@ class ContactProject(object):
                 else:
                     BLOCK=blocks[sbn]
                 BLOCK.insertElement(CELL)
-                for m,wire in enumerate(self.settings[i]["wires"]):
-                    nw=NanoWire("C"+CELL.name[4:]+"_wire_%d"%m,end1=wire["end1"],
-                                                end2=wire["end2"],width=wire["w"],text="W_%d"%m)
-                    nw.make()
-                    CELL.insertElement(nw)
+#Martin: don't add nanowires to GDS output to reduce file size
+#                for m,wire in enumerate(self.settings[i]["wires"]):
+#                    nw=NanoWire("C"+CELL.name[4:]+"_wire_%d"%m,end1=wire["end1"],
+#                                                end2=wire["end2"],width=wire["w"],text="W_%d"%m)
+#                    nw.make()
+#                    CELL.insertElement(nw)
                 end1=self.settings[i]["end1"]
                 end2=self.settings[i]["end2"]
                 obj=self.allPatterns[self.settings[i]["contact"]]
@@ -555,7 +560,7 @@ class ContactProject(object):
             f.close()
             shutil.rmtree(fd)
         else:
-            gds.insertPatterns(details=2)
+#            gds.insertPatterns(details=2)
             gds.save(path)
         
     def fit(self,imageIDs=None,firstLine=True):
@@ -569,11 +574,11 @@ class ContactProject(object):
             string+="------%d------\n"%i
             string+="Filename: "+os.path.basename(self.paths[i])+"\n"
             imag=ImageObject(self.paths[i],descriptor=self.descriptor)
-            string+=imag.findMarkers()
+            string+=imag.findMarkers()#
             if imag.cell is None:
                 self.settings[i]["cell"]=None
                 return string
-            string+=imag.findNanowires()
+            string+=imag.findNanowires(minLength=self.minNWLen,maxLength=self.maxNWLen)#
             imag.reduceMemoryFoodPrint()
             self.imageObjects[i]=imag
             self.settings[i].update({"fit":True,"scale":imag.scale,"angle":imag.angle,"center":imag.center})
@@ -583,20 +588,16 @@ class ContactProject(object):
         self.saved=False
         return string
     
-                  
-    
     def createInverseTransformFunc(self,index):   
         center=self.settings[index]["center"]
         scale=self.settings[index]["scale"]
         angle=self.settings[index]["angle"]
-        sub=center*np.array([1,-1])*scale
         return self.descriptor.createInverseTransformFunc(center,angle,scale)
            
     def createTransformFunc(self,index):   
         center=self.settings[index]["center"]
         scale=self.settings[index]["scale"]
         angle=self.settings[index]["angle"]
-        sub=center*np.array([1,-1])*scale
         return self.descriptor.createTransformFunc(center,angle,scale)
         
     def __repr__(self):
@@ -666,7 +667,7 @@ $$"$$
 cwd=os.getcwd()
 if options.userid == "":
     founduser=re.match(r"/home/cad/data/([a-z]+)/.*",os.getcwd()+"/")
-    if founduser is None:
+    if founduser == None:
         raise RuntimeError("no user name found, please use the -u option")
     user=founduser.groups()[0]
     print "Username found, using: " + user
@@ -689,7 +690,8 @@ print "Fracturing %d files"%len(files)
 for f in files:
     os.system("cats %s"%f)
     #    call(["cats","convert.cinc"])
-os.system("writefile *.cflt") ##TODO: -f or something to omit user interaction?
+##TODO: -f or something to omit user interaction? (CATS command)    
+os.system("writefile *.cflt") 
 
 tar=tarfile.open(args[0][:-5]+".nwcj",mode="w:bz2")
 files = glob.glob("*.gpf")
@@ -778,7 +780,7 @@ $$"$$
 cwd=os.getcwd()
 if options.userid == "":
     founduser=re.match(r"/home/lb/users/([a-z]+)/.*",os.getcwd()+"/")
-    if founduser is None:
+    if founduser == None:
         raise RuntimeError("no user name found, please use the -u option")
     user=founduser.groups()[0]
     print "Username found, using: " + user

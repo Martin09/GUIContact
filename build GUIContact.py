@@ -5,7 +5,6 @@ import os
 import matplotlib
 import glob
 
-
 sys.argv.append('py2exe')
 
 import os 
@@ -60,6 +59,7 @@ opts = {
                              'numexpr',
                              'FileDialog',
                              'shapely.geometry',
+                             're',
 #                              # "matplotlib.numerix.fft", 
 #                              # "matplotlib.numerix.linear_algebra", 
 #                              # "matplotlib.numerix.random_array", 
@@ -67,10 +67,10 @@ opts = {
                              ], 
                 'excludes': [#'_tkinter',
                              'Patterns',
-                #             '_gtkagg', '_tkagg', '_agg2', '_cairo', '_cocoaagg', 
-                #             '_fltkagg', '_gtk', '_gtkcairo','_backend_gdk', 
-                #             '_gobject','_gtkagg','_tkinter','glade','pango', 
-                #             'QtCore','QtGui' 
+#                             '_gtkagg', '_tkagg', '_agg2', '_cairo', '_cocoaagg', 
+#                             '_fltkagg', '_gtk', '_gtkcairo','_backend_gdk', 
+#                             '_gobject','_gtkagg','_tkinter','glade','pango', 
+                             #'QtCore','QtGui' 
                              ], 
                 'dll_excludes': ['tk84.dll', 
                                  'tcl84.dll', 

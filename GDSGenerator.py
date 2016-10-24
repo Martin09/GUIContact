@@ -49,13 +49,13 @@ class colorMap(dict):
         color={"color":color,"alpha":alpha}
         self.update({layer:color})
 
-
-
 class Element(object):        
     def __init__(self,**kwargs):
         if len(kwargs) != 0:
             l=kwargs.keys()
-            raise KeyError("<"+re.sub(pat1,r"\1",str(type(self)))+"> got unexpected keyword(s): "+str(l))
+            print "<"+re.sub(pat1,r"\1",str(type(self)))+"> got unexpected keyword(s): "+str(l) 
+            kwargs={}
+#            raise KeyError("<"+re.sub(pat1,r"\1",str(type(self)))+"> got unexpected keyword(s): "+str(l))
         pass
         
     def show(self,ax,maxRegion=2.,cmap=colorMap(),pltTransform=f):

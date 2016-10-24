@@ -78,9 +78,9 @@ MSF={
     0.020:(3,41),
     0.015:(2,31),
     0.010:(2,21),
-    0.005:(1,11),  #Added by Martin, untested!
-    0.0025:(1,6),  #Added by Martin, untested!
-    0.00125:(1,3), #Added by Martin, untested!
+    0.005:(1,11),  #Added by Martin
+    0.0025:(1,6),  #Added by Martin
+    0.00125:(1,3), #Added by Martin
     }
 defExposureSettings.update({"MSF":MSF[defExposureSettings["res"]]}) 
 

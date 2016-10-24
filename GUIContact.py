@@ -5,6 +5,7 @@ Created on Tue Mar 13 14:45:30 2012
 @author: rueffer
 """
 import time
+import re
 import numpy as np
 from cv2 import imread
 from matplotlib import pylab as plt
@@ -14,16 +15,17 @@ from matplotlib import transforms as MPLTransforms
 from copy import deepcopy
 from string import atof,atoi
 import autoContact
+from tqdm import tqdm #Progress bar
 
 #==============================================================================
 #Changelog
-# 06/03/2015 Martin: Added absolute paths checkbox to save absolute paths if you need
-# 06/03/2015 Martin: Added nanowire tracking checkbox for reviewing NWs more quickly
-# 26/02/2015 Martin: In ebeamsettings added more resolutions to MSF and more beam sizes
-# 25/02/2015 Martin: Changed all "== None" to "is None" to avoid future warning
-# 25/02/2015 Martin: Changed autoContact.py to have the option to save absolute paths
-# 24/02/2015 Martin: Fixed the text display bug in GDSGenerator/__getPoly__
-# 23/02/2015 Martin: Added intersectPoint, roundCorners and remove duplcates functions to PatternGenerator.py for help in making patterns
+# 12/03/2015 Martin: Modified open() function to be able to call it manually for easier debugging
+# 12/03/2015 Martin: In GDSGenerator changed KeyError to instead output a warning when unexpected keys are read from a project
+# 25/06/2015 Martin: In autoDetect added __IMG_input__=None to eliminate memory leak in previous versions
+# 26/06/2015 Martin: In GUIContact added status bar update when exporting GDS or CATS
+# 26/06/2015 Martin: Added min and max NW lengths for NW autodetection
+# 29/06/2015 Martin: Added max errors to file list for easy reading
+# 17/12/2015 Martin: Added extra help menus defining allowed ebeam resolutions and beam sizes
 #==============================================================================
 
 #===============================================================================
@@ -31,7 +33,7 @@ import autoContact
 #===============================================================================
 
 import sys, os
-from PyQt4 import QtGui, QtCore
+from PyQt4 import QtGui, QtCore   
 
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
@@ -42,9 +44,10 @@ from matplotlib.axes import Axes
 import matplotlib.axis as maxis
 
 progname = "APaGe ROM"
-progversion = "0.983"
+progversion = "0.985"
 latest_changes="""
-0.983  Name changed
+0.985  Name changed
+
 """
 #===============================================================================
 # ##TODO:
@@ -273,11 +276,17 @@ class ApplicationWindow(QtGui.QMainWindow):
 #                self.statusBar().showMessage("Error '%s'" % exception, 10000)    
 
     def open(self):
-        fileName = QtGui.QFileDialog.getOpenFileName(self,
-                "Choose a file ", '*.nwcpr', "NW Contact Project (*.nwcpr)")
+        self.openProj()
+
+    def openProj(self,fileName = None):
+        if fileName is None:
+            fileName = QtGui.QFileDialog.getOpenFileName(self,
+                    "Choose a file ", '*.nwcpr', "NW Contact Project (*.nwcpr)")
+        
         if fileName:
 #            try:
             self.fileName=fileName
+            print fileName
             self.project.load(str(fileName))
             print self.project.version
             print autoContact.version
@@ -337,6 +346,7 @@ class ApplicationWindow(QtGui.QMainWindow):
                 "Choose a file name", filt, inf )
         if fileName:
             fn=str(fileName)
+            self.statusBar().showMessage("Exporting file, please wait...")            
             self.project.export(fn,indices,fileType=fileType)
             self.statusBar().showMessage("Exported to '%s'" % fileName)
             self.appendToLog("Exported to '%s'" % fileName)
@@ -367,7 +377,6 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.project.setEnd(index,name,new)
         self.updateAll()
         
-
     def filesDropped(self, l):
         self.__addFiles__(l)    
         
@@ -528,7 +537,21 @@ class ApplicationWindow(QtGui.QMainWindow):
     def trackNWCheckBoxChanged(self,i):
         pass
 #        self.updateImage()    
-        
+    
+    def NWDetectChanged(self,i):
+        #Avoid errors on initialization when this event is executed before variable initialization
+        if hasattr(self, 'maxNWSize') and hasattr(self, 'minNWSize') and hasattr(self, 'project'):
+            self.minNWSize.setValidator(QtGui.QIntValidator(0, int(self.maxNWSize.text()),self))
+            self.maxNWSize.setValidator(QtGui.QIntValidator(int(self.minNWSize.text()), 99))              
+            if self.minNWSize.hasAcceptableInput() and self.maxNWSize.hasAcceptableInput():
+                self.maxNWSize.setStyleSheet("color: rgb(0, 0, 0);")
+                self.minNWSize.setStyleSheet("color: rgb(0, 0, 0);")     
+                self.project.maxNWLen = int(self.maxNWSize.text())
+                self.project.minNWLen = int(self.minNWSize.text())
+            else:
+                self.maxNWSize.setStyleSheet("color: rgb(255, 0, 0);")
+                self.minNWSize.setStyleSheet("color: rgb(255, 0, 0);")
+
     def absPathsCheckBoxChanged(self,i):
         if self.absPathsCheck.checkState():
             self.project.changePathType('absolute')
@@ -798,14 +821,21 @@ class ApplicationWindow(QtGui.QMainWindow):
                     block=self.project.descriptor.getBlockNo(cell)
                     blockstring="%d,%d"%(tuple(block))
                     mode=self.project.settings[n]["mode"]
+                    m = re.search('\[\+\-\s([0-9]*\.*[0-9]*),([0-9]*\.*[0-9]*) nm\]', self.project.fitLogs[n])
+                    if hasattr(m,"group"):
+                        fitError = "+-%.2f nm"%max(float(m.group(1)),float(m.group(2)))
+                    else:
+                        fitError = ""
                     item.setText(1,cellstring)
                     item.setText(2,blockstring)
                     item.setText(3,mode)
+                    item.setText(6,fitError)
                 else:
     #                    item.setCheckState(0,QtCore.Qt.Unchecked)
                     item.setText(1,"")
                     item.setText(2,"")
                     item.setText(3,"")
+                    item.setText(6,"")                    
                 contact=self.project.settings[n]["contact"]
                 item.setText(4,contact)
                 item.setText(5,str(n))
@@ -962,15 +992,15 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.fileListWidget=QtGui.QMainWindow()
         self.fileListWidget.setParent(dock)
         dock.setWidget(self.fileListWidget)
-        dock.setMaximumWidth(340)
-        dock.setMinimumWidth(280)
+#        dock.setMaximumWidth(500)
+#        dock.setMinimumWidth(280)
         self.fileList = myFileList(parent=self.fileListWidget)
 #        self.fileList = QtGui.QTreeWidget(parent=self.fileListWidget)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
         self.fileList.setRootIsDecorated(False)
         self.fileList.setAlternatingRowColors(True)
-        self.fileList.setHeaderLabels(["File","Cell","Block","Mode","Contact","Index"])
+        self.fileList.setHeaderLabels(["File","Cell","Block","Mode","Contact","Index","Max Error"])
         self.fileListWidget.setCentralWidget(self.fileList)
         self.fileList.setSelectionMode(3)
         self.fileList.setTextElideMode(QtCore.Qt.ElideLeft)
@@ -979,6 +1009,8 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.fileList.header().resizeSection(2,40)
         self.fileList.header().resizeSection(3,40)
         self.fileList.header().resizeSection(4,50)
+        self.fileList.header().resizeSection(5,50)
+        self.fileList.header().resizeSection(6,100)
         self.fileList.itemSelectionChanged.connect(self.fileSelectionChanged)
         self.fileList.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.fileList.customContextMenuRequested.connect(self.fileListPopup)
@@ -1017,8 +1049,6 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.viewMenu.addAction(dock.toggleViewAction())
         self.fitLog.setReadOnly(True)
         
-            
-        
     def createImageDock(self):   
         dock = QtGui.QDockWidget("Image & Preview", self)
         self.imageWidget=QtGui.QMainWindow()
@@ -1039,9 +1069,36 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.trackNWCheck.stateChanged.connect(self.trackNWCheckBoxChanged)        
         self.absPathsCheck=QtGui.QCheckBox("Save Absolute Paths")
         self.absPathsCheck.stateChanged.connect(self.absPathsCheckBoxChanged) 
+#        self.minNWSlider=QtGui.QSlider(orientation=QtCore.Qt.Horizontal)
+#        self.minNWSlider.setTickPosition(QtGui.QSlider.TicksBothSides) 
+#        self.minNWSlider.setTickInterval(1)
+#        self.minNWSlider.setMaximum(10)
+#        self.minNWSlider.setMinimum(2)
+        
+        self.minNWLabel = QtGui.QLabel()
+        self.minNWLabel.setText("     Min NW Size (um): ")
+        self.minNWSize = QtGui.QLineEdit()
+        self.minNWSize.setFixedWidth(20)
+        self.minNWSize.textChanged.connect(self.NWDetectChanged)
+        self.minNWSize.setText("2")
+        
+        self.maxNWLabel = QtGui.QLabel()
+        self.maxNWLabel.setText("  Max NW Size (um): ")
+        self.maxNWSize = QtGui.QLineEdit()
+        self.maxNWSize.setFixedWidth(20)       
+        self.maxNWSize.textChanged.connect(self.NWDetectChanged)   
+        self.maxNWSize.setText("10")
+        
+        self.minNWSize.setValidator(QtGui.QIntValidator(0, int(self.maxNWSize.text()),self))
+        self.maxNWSize.setValidator(QtGui.QIntValidator(int(self.minNWSize.text()), 99))        
+
         self.mpl_toolbar.addWidget(self.previewCheck)
         self.mpl_toolbar.addWidget(self.trackNWCheck)
-        self.mpl_toolbar.addWidget(self.absPathsCheck)        
+        self.mpl_toolbar.addWidget(self.absPathsCheck)
+        self.mpl_toolbar.addWidget(self.minNWLabel)
+        self.mpl_toolbar.addWidget(self.minNWSize)         
+        self.mpl_toolbar.addWidget(self.maxNWLabel)
+        self.mpl_toolbar.addWidget(self.maxNWSize)              
         self.mpl_toolbar.setMovable(False)
         self.imageWidget.addToolBar(self.mpl_toolbar)
         self.imageWidget.setCentralWidget(self.canvas)
@@ -1049,8 +1106,8 @@ class ApplicationWindow(QtGui.QMainWindow):
         
     def createWireOptions(self):
         dock = QtGui.QDockWidget("Wire Options", self)
-        dock.setMaximumWidth(340)
-        dock.setMinimumWidth(280)
+#        dock.setMaximumWidth(340)
+#        dock.setMinimumWidth(280)
         widget=QtGui.QWidget()
         dock.setWidget(widget)
         self.wireOptionsLayout=QtGui.QGridLayout()
@@ -1071,8 +1128,8 @@ class ApplicationWindow(QtGui.QMainWindow):
         
     def createContactOptions(self):
         dock = QtGui.QDockWidget("Contact Settings", self)
-        dock.setMaximumWidth(340)
-        dock.setMinimumWidth(280)
+#        dock.setMaximumWidth(340)
+#        dock.setMinimumWidth(280)
         widget=QtGui.QWidget()
         dock.setWidget(widget)
         self.contactOptionsLayout=QtGui.QVBoxLayout()
@@ -1098,8 +1155,8 @@ class ApplicationWindow(QtGui.QMainWindow):
         
     def createExposureOptions(self):
         dock = QtGui.QDockWidget("Exposure Settings", self)
-        dock.setMaximumWidth(340)
-        dock.setMinimumWidth(280)
+#        dock.setMaximumWidth(340)
+#        dock.setMinimumWidth(280)
         widget=QtGui.QWidget()
         dock.setWidget(widget)
         self.exposureOptionsLayout=QtGui.QVBoxLayout()
@@ -1169,6 +1226,8 @@ class ApplicationWindow(QtGui.QMainWindow):
         
         self.helpMenu = self.menuBar().addMenu("&Help")
         self.helpMenu.addAction(self.aboutAct)
+        self.helpMenu.addAction(self.resolutionsAct)
+        self.helpMenu.addAction(self.beamsAct)
         
     def createStatusBar(self):
         self.statusBar().showMessage("Ready")
@@ -1203,6 +1262,12 @@ class ApplicationWindow(QtGui.QMainWindow):
         self.aboutAct = QtGui.QAction("&About", self,
                 statusTip="Show the application's About box",
                 triggered=self.about)
+        self.resolutionsAct = QtGui.QAction("&Resolutions", self,
+                statusTip="See what are the allowable resolutions in ebeam settings",
+                triggered=self.resolutions)       
+        self.beamsAct = QtGui.QAction("&Beams", self,
+                statusTip="See what are the allowable beam currents are in ebeam settings",
+                triggered=self.beams)                   
         self.addFilesAct = QtGui.QAction(QtGui.QIcon('images/plus.png'),
                 "&Add files...", self,
                 statusTip="Add files to current project",
@@ -1266,12 +1331,51 @@ Modulversions:
         QtGui.QMessageBox.about(self, "About %s" % progname,string
 )
 
+    def resolutions(self):
+        string=u"""The allowed resolutions are:
+        0.1
+        0.75
+        0.05
+        0.025
+        0.020
+        0.015
+        0.010
+        0.005
+        0.0025
+        0.00125
+        """
+        QtGui.QMessageBox.about(self, "Allowed Resolutions",string)        
+    def beams(self):
+        string=u"""The allowed beams are:
+        200nA
+        150nA
+        100nA
+        70nA
+        50nA
+        40nA
+        30nA
+        20nA
+        15nA
+        10nA
+        7.5nA
+        5nA
+        3nA
+        2nA
+        1nA
+        700pA
+        500pA
+        200pA
+        100pA       
+        """        
+        QtGui.QMessageBox.about(self, "Allowed Beams",string)
+
 #dynamic loading of Patterns Plugin:
 if __name__ == "__main__":
     qApp = QtGui.QApplication(sys.argv)
     
     aw = ApplicationWindow()
     aw.show()
+#    aw.openProj(str(r'D:\Dropbox\LMSC\Nanowire Contacting\2015-06-24 - MF-09-ET\MF-09-ET.nwcpr'))
 #    aw.__addFiles__([r'D:\Dropbox\MasterThesis\Software\myContacting\image_141215_004.JPG'])
 #    aw.__addFiles__([r'D:\Dropbox\MasterThesis\Software\myContacting\140423B_140918_019.JPG'])
     #aw.__addFiles__([r'D:\Measurements\OriginalData\Optical@Z1CMI\CT30368\03680031.JPG'])
@@ -1281,6 +1385,6 @@ if __name__ == "__main__":
     #aw.autoExport()
     
     
-    sys.exit(qApp.exec_())
+#    sys.exit(qApp.exec_())
     qApp.exec_()
 #

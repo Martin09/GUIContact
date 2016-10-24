@@ -959,13 +959,82 @@ class Gate3contacts4(NanoWireTemplate):
         
     def getDefLayers(self):
         return super(Gate3contacts4,self).getDefLayers().union(set([self.padLayer,self.gateLayer,self.ContLayer]))
-   
+
+class p4_center_pn(NanoWireTemplate):
+    def __init__(self,name,descriptor=None,**kwargs):     
+        self.descriptor=descriptor        
+        try:
+            self.kwargs
+        except:
+            self.kwargs={}
+        self.kwargs.update({
+        "padSpacing":300.,
+        "pad":200.,
+        "width":1.,
+        "intLength":5.,
+        "widthAtPad":10.,
+        "overlap":1.,
+        "textSpacing":40.,
+        "textHeight":40.,
+        "padLayer":0,
+        "jointOverlap":2.,
+        "widthGates":0.5,
+        "widthIntCont":0.5,
+        "spaceCont":0.5,
+        "gateLayer":2,
+        "clayer1":0,
+        "clayer2":0,
+        "clayer3":0,
+        "clayer4":0,
+        })
+        super(p4_center_pn,self).__init__(name,descriptor=descriptor,**kwargs)
+    
+    def createText(self,contacts):
+        top,bot,center,d,length,angle=self.getCoords()
+        l=length-2.*self.overlap-self.widthGates
+        t=self.name.split("_")[0]+" L:"+"%.2f"%l
+        contacts.insertElement(Text(t,va="bottom",height=self.textHeight),layer=self.padLayer,xy=[0,(self.padSpacing/2.+self.pad+self.textSpacing)])
         
+    def make(self,oneSide=False):
+        top,bot,center,d,length,angle=self.getCoords()
+        W=self.width
+        D=length/2.-self.overlap
+        ps=self.padSpacing
+        p=self.pad
+        wp=self.widthAtPad
+        iL=self.intLength
+        jO=self.jointOverlap
+        p1a=[[wp/2.,ps/2.],[W/2.,D+iL],[-W/2.,D+iL],[-wp/2.,ps/2.],
+            [-p/2.,ps/2.],[-p/2.,ps/2.+p],[p/2.,ps/2.+p],[p/2.,ps/2.]]
+        p2a=myRotate(np.array(p1a),180)
+        contacts=Structure(self.name+"_contacts")
+        contacts.insertElement(Polygon(p1a),layer=self.padLayer)
+        contacts.insertElement(Polygon(p2a),layer=self.padLayer)
+        self.createText(contacts)
+        self.insertElement(contacts,angle=angle,xy=center)
         
-  
+        ## HERE THE NEW STUFF GOES IN
+        Wg=self.widthGates
+        Wc=self.widthIntCont
+        jO=self.jointOverlap  
+        S=self.spaceCont   
+        c1s=[[-0.5,-Wg/2-S],[-0.5,-Wg/2-S-Wc],[5,-Wg/2-S-Wc],[5,-Wg/2-S]]
+        c1d=[[-0.5,Wg/2+S],[-0.5,Wg/2+S+Wc],[5,Wg/2+S+Wc],[5,Wg/2+S]]    
+        c2s=[[W/2,-3*Wg/2-3*S-Wc],[W/2,-3*Wg/2-3*S-Wc-12],[-W/2,-3*Wg/2-3*S-Wc-12],[-W/2,-3*Wg/2-3*S-Wc]]    
+        c2d=[[W/2,+3*Wg/2+3*S+Wc],[W/2,+3*Wg/2+3*S+Wc+12],[-W/2,+3*Wg/2+3*S+Wc+12],[-W/2,+3*Wg/2+3*S+Wc]]        
+        contacts.insertElement(Polygon(c1s),layer=self.clayer1)
+        contacts.insertElement(Polygon(c1d),layer=self.clayer2)
+        contacts.insertElement(Polygon(c2s),layer=self.clayer3)
+        contacts.insertElement(Polygon(c2d),layer=self.clayer4)
+        p4=[[4,+Wg/2+S],[4,Wg/2+S+Wc],[150,60],[150,250],[350,250],[350,50],[150,50],[5,Wg/2+S]]
+        p5=[[4,-Wg/2-S],[4,-Wg/2-S-Wc],[150,-60],[150,-250],[350,-250],[350,-50],[150,-50],[5,-Wg/2-S]]
+        contacts.insertElement(Polygon(p4),layer=self.padLayer)
+        contacts.insertElement(Polygon(p5),layer=self.padLayer)
+        return W,D,p,ps,wp,length,angle,contacts
         
-        
-        
+    def getDefLayers(self):
+        return super(p4_center_pn,self).getDefLayers().union(set([self.padLayer,self.gateLayer,self.clayer1,self.clayer2,self.clayer3,self.clayer4]))
+    
 class p4_center(NanoWireTemplate):
     def __init__(self,name,descriptor=None,**kwargs):     
         self.descriptor=descriptor        
@@ -1493,10 +1562,6 @@ class BentCPW(NanoWireTemplate):
         self.createGround()
         self.createGround(mirrored=True)
         self.createText()
-        
-          
-        
-        
                
 class BentCPWContact(BentCPW):
     def __init__(self,name,descriptor=None,**kwargs):
@@ -2683,7 +2748,7 @@ class BarClose2ptAbs(NanoWireTemplate):
             "padSpacing":160.,
             "pad":150.,
             "widthFine":0.25,
-            "widthCoarse":1.5,
+            "widthCoarse":2.,
             "contLength":2.,
             "intLength":5.,
             "contSpacing":0.2,
@@ -2700,6 +2765,8 @@ class BarClose2ptAbs(NanoWireTemplate):
             "radiusFineCorners":0.1,
             "radiusCoarseCorners":0.125,
             "padYOffset":0.,
+            "offsetAngle_inner":0.,
+            "corr_Overexposure":0.
 #            "rotation":0.,
 #            "debug":0.,               
             })
@@ -2717,6 +2784,12 @@ class BarClose2ptAbs(NanoWireTemplate):
         secondPoly=ShapelyPolygon(list2)
         newPolygon=firstPoly.union(secondPoly)        
         return list(newPolygon.exterior.coords)#newPolygon.exterior
+        
+    def erode(self,list1,distance): #To correct for overexposure
+        list1=[(pp[0],pp[1]) for pp in list1] #Convert points to list 
+        sPoly=ShapelyPolygon(list1)
+        sPoly = sPoly.buffer(distance)
+        return list(sPoly.exterior.coords)#newPolygon.exterior        
 
     def createPads(self,contacts,padCenter,contCenter,offsetAngle=0,symm=1):
         top,bot,NWcenter,d,length,angle=self.getCoords()
@@ -2740,8 +2813,8 @@ class BarClose2ptAbs(NanoWireTemplate):
                 [self.intLength,-self.widthCoarse/2.],
                 [self.intLength,self.widthCoarse/2.]]
         intLenVect=myRotate(np.array([self.intLength,0]),angle) 
-        intLenArm=myRotate(np.array(intLenArm),offsetAngle)
-        intLenVect=myRotate(np.array(intLenVect),offsetAngle)               
+        intLenArm=myRotate(np.array(intLenArm),offsetAngle+45)
+        intLenVect=myRotate(np.array(intLenVect),offsetAngle+45)               
         intLenArm=np.array(intLenArm)+contCenter                  
         intLenArm=myRotate(np.array(intLenArm),angle)
         #Make connecting arm
@@ -2843,6 +2916,7 @@ class BarClose2ptAbs(NanoWireTemplate):
         radiusF=self.radiusFineCorners
         radiusC=self.radiusCoarseCorners
         pYO=self.padYOffset
+        erosion=self.corr_Overexposure
 #        if self.debug:        
 #            angle = self.rotation #Debugging    
 
@@ -2882,11 +2956,12 @@ class BarClose2ptAbs(NanoWireTemplate):
             points = [pts1[1]]+self.intersectPoint(pts1[1],pts1[2],pts2[1],pts2[2])+[pts2[2]]+[pts2[3]]+self.intersectPoint(pts1[3],pts1[0],pts2[3],pts2[0])+[pts1[0]]
              
         points=self.roundCorners(points,radiusF,10)
+        points=self.erode(points,erosion)        
         p1b=[(pp[0],pp[1]) for pp in points] #Convert points to list        
         p2b=myRotate(np.array(p1b),180)
         
         contacts=Structure(self.name+"_contacts")    
-        self.createPads(contacts,(ps/2.+p/2.,0),(cL-jO+jCR/2.+cOX,cS/2.+W/2+cOY-jO+jCR/2.),offsetAngle=45)        
+        self.createPads(contacts,(ps/2.+p/2.,0),(cL-jO+jCR/2.+cOX,cS/2.+W/2+cOY-jO+jCR/2.),offsetAngle=self.offsetAngle_inner)        
         
         contacts.insertElement(Polygon(p1b),layer=self.contLayer,angle=angle,xy=center)
         contacts.insertElement(Polygon(p2b),layer=self.contLayer,angle=angle,xy=center)     
@@ -2902,7 +2977,7 @@ class BarClose2ptAbs(NanoWireTemplate):
         text = self.name.split("_")[0]+" L:%.2fum"%(length)+"\n2Pt:"+"%.0fnm Spac"%(self.contSpacing*1000)
         self.createText(contacts,text)
         self.insertElement(contacts)
-        return W,D,p,ps,wp,length,angle,contacts
+        return W,D,p,ps,wp,length,angle,contacts,erosion
         
     def getDefLayers(self):
         return super(BarClose2ptAbs,self).getDefLayers().union(set([self.padLayer,self.contLayer]))        
@@ -2918,7 +2993,7 @@ class BarClose4ptAbs(BarClose2ptAbs):
             "padSpacing":160.,
             "pad":150.,
             "widthFine":0.25,
-            "widthCoarse":1.5,
+            "widthCoarse":2.,
             "contLength":2.,
             "intLength":5.,
             "contSpacing":0.2,
@@ -2937,18 +3012,26 @@ class BarClose4ptAbs(BarClose2ptAbs):
             "outerContSpacing":0.2,
             "padYOffset":0., 
             "padXOffset":0.,
+            "offsetAngle_inner":0.,            
+            "offsetAngle_outer":0.,
+            "plat":0,
+            "corr_Overexposure":0.,            
 #            "rotation":0.,
 #            "debug":0.,            
             })
         super(BarClose4ptAbs,self).__init__(name,descriptor=descriptor,**kwargs)
             
     def createText(self,contacts,text):
-        top,bot,center,d,length,angle=self.getCoords()         
-        text = self.name.split("_")[0]+" L:%.2fum"%(length)+"\n4Pt:"+"%.0fnm Spac"%(self.contSpacing*1000)
+        top,bot,center,d,length,angle=self.getCoords()  
+        if self.plat:
+            text = self.name.split("_")[0]+" L:%.2fum"%(length)+"\nPlat:"+"%.0fnm Spac"%(self.contSpacing*1000)
+        else:
+            text = self.name.split("_")[0]+" L:%.2fum"%(length)+"\n4Pt:"+"%.0fnm Spac"%(self.contSpacing*1000)
+            
         super(BarClose4ptAbs,self).createText(contacts,text)
             
     def make(self,oneSide=False):
-        W,D,p,ps,wp,length,angle,contacts=super(BarClose4ptAbs,self).make()
+        W,D,p,ps,wp,length,angle,contacts,erosion=super(BarClose4ptAbs,self).make()
         top,bot,center,d,length,angle=self.getCoords()
         ## HERE THE NEW STUFF GOES IN
         W=self.widthFine
@@ -3010,11 +3093,12 @@ class BarClose4ptAbs(BarClose2ptAbs):
             points = [pts1[1]]+self.intersectPoint(pts1[1],pts1[2],pts2[1],pts2[2])+[pts2[2]]+[pts2[3]]+self.intersectPoint(pts1[3],pts1[0],pts2[3],pts2[0])+[pts1[0]]
              
         points=self.roundCorners(points,radiusF,10)
-        points=np.array(points)*[-1,1]       
+        points=np.array(points)*[-1,1]  
+        points=self.erode(points,erosion)         
         p1b=[(pp[0],pp[1]) for pp in points] #Convert points to list        
         p2b=myRotate(np.array(p1b),180)
 
-        self.createPads(contacts,(-pXO,ps/2.+p/2.),(-cL+jO-jCR/2.-cOX,cS/2.+W/2+cOY-jO+jCR/2.),offsetAngle=90)  
+        self.createPads(contacts,(-pXO,ps/2.+p/2.),(-cL+jO-jCR/2.-cOX,cS/2.+W/2+cOY-jO+jCR/2.),offsetAngle=self.offsetAngle_outer+90)  
 
         contacts.insertElement(Polygon(p1b),layer=self.contLayer,angle=angle,xy=center)
         contacts.insertElement(Polygon(p2b),layer=self.contLayer,angle=angle,xy=center)
@@ -3027,7 +3111,7 @@ class BarClose4ptAbs(BarClose2ptAbs):
         contacts.insertElement(Text("Out/Top",va="top",ha="left",height=p/8.),layer=self.padLayer,angle=0,xy=rotatedXY1+center)        
         contacts.insertElement(Text("Out/Bot",va="top",ha="center",height=p/8.),layer=self.padLayer,angle=0,xy=rotatedXY2+center)
 
-        return W,D,p,ps,wp,length,angle,contacts  
+        return W,D,p,ps,wp,length,angle,contacts,erosion  
 
     def getDefLayers(self):
         return super(BarClose4ptAbs,self).getDefLayers().union(set([self.padLayer,self.contLayer]))
@@ -3043,7 +3127,7 @@ class BarClose4ptAbs_1Gate(BarClose4ptAbs):
             "padSpacing":160.,
             "pad":150.,
             "widthFine":0.25,
-            "widthCoarse":1.5,
+            "widthCoarse":2.,
             "contLength":2.,
             "intLength":5.,
             "wireOverlap":1.,
@@ -3068,9 +3152,12 @@ class BarClose4ptAbs_1Gate(BarClose4ptAbs):
             "gateLength":3.,
             "gateLayer":2,  
             "rotation":0.,
-            "debug":0.,                
-            })           
-            
+            "debug":0.,
+            "offsetAngle_inner":0.,            
+            "offsetAngle_outer":-45.,
+            "offsetAngle_gate":0., 
+            "corr_Overexposure":0.,            
+            })                      
         super(BarClose4ptAbs_1Gate,self).__init__(name,descriptor=descriptor,**kwargs)
     
     def createText(self,contacts,text):
@@ -3079,7 +3166,7 @@ class BarClose4ptAbs_1Gate(BarClose4ptAbs):
         super(BarClose4ptAbs,self).createText(contacts,text)
         
     def make(self,oneSide=False):
-        W,D,p,ps,wp,length,angle,contacts=super(BarClose4ptAbs_1Gate,self).make()
+        W,D,p,ps,wp,length,angle,contacts,erosion=super(BarClose4ptAbs_1Gate,self).make()
         top,bot,center,d,length,angle=self.getCoords()
 #        if self.debug:        
 #            angle = self.rotation #Debugging        
@@ -3158,10 +3245,11 @@ class BarClose4ptAbs_1Gate(BarClose4ptAbs):
             points=np.array(points)*[-1,1]  #Reflect contact to other side of NW  
         else:
             points=np.array(points)*[1,-1]  
+        points=self.erode(points,erosion)             
         p1b=[(pp[0],pp[1]) for pp in points] #Convert points to list        
         #p2b=myRotate(np.array(p1b),180)     
 
-        self.createPads(contacts,(-pXO,ps/2.+p/2.),np.mean([pts2[2],pts2[3]],0)*[-1,1],offsetAngle=135,symm=0)  
+        self.createPads(contacts,(-pXO,ps/2.+p/2.),np.mean([pts2[2],pts2[3]],0)*[-1,1],offsetAngle=self.offsetAngle_gate+90,symm=0)  
         contacts.insertElement(Polygon(p1b),layer=self.gateLayer,angle=angle,xy=center)
 
         #Annotate the pads
@@ -3169,7 +3257,7 @@ class BarClose4ptAbs_1Gate(BarClose4ptAbs):
         rotatedXY1 = myRotate(rotatedXY1,0)
         contacts.insertElement(Text("Gate",va="top",ha="right",height=p/8.),layer=self.padLayer,angle=0,xy=rotatedXY1+center)        
 
-        return W,D,p,ps,wp,length,angle,contacts  
+        return W,D,p,ps,wp,length,angle,contacts,erosion  
 
     def getDefLayers(self):
         return super(BarClose4ptAbs_1Gate,self).getDefLayers().union(set([self.padLayer,self.contLayer,self.gateLayer]))
@@ -3185,7 +3273,7 @@ class BarClose4ptAbs_2Gate(BarClose4ptAbs):
             "padSpacing":160.,
             "pad":150.,
             "widthFine":0.25,
-            "widthCoarse":1.5,
+            "widthCoarse":2.,
             "contLength":2.,
             "intLength":5.,
             "contSpacing":0.2,
@@ -3213,6 +3301,9 @@ class BarClose4ptAbs_2Gate(BarClose4ptAbs):
             "gateLayer":2.,
             "gateTaper":0.5,
             "radiusGate":0.05,
+            "corr_Overexposure":0.,        
+            "offsetAngle_outer":0.,
+            "offsetAngle_inner":0.            
 #            "rotation":0.,
 #            "debug":0.,                
             })
@@ -3225,7 +3316,7 @@ class BarClose4ptAbs_2Gate(BarClose4ptAbs):
         super(BarClose4ptAbs,self).createText(contacts,text)
         
     def make(self,oneSide=False):
-        W,D,p,ps,wp,length,angle,contacts=super(BarClose4ptAbs_2Gate,self).make()          
+        W,D,p,ps,wp,length,angle,contacts,erosion=super(BarClose4ptAbs_2Gate,self).make()          
         top,bot,center,d,length,angle=self.getCoords()
 #        if self.debug:        
 #            angle = self.rotation #Debugging         
@@ -3302,8 +3393,8 @@ class BarClose4ptAbs_2Gate(BarClose4ptAbs):
                      [pts1[0]]
              
         points=self.roundCorners(points,radiusG,10)
-        
-        points=np.array(points)*[-1,1]       
+        points=np.array(points)*[-1,1]
+        points=self.erode(points,erosion)         
         p1b=[(pp[0],pp[1]) for pp in points] #Convert points to list        
         p2b=myRotate(np.array(p1b),180)     
 
@@ -3319,18 +3410,154 @@ class BarClose4ptAbs_2Gate(BarClose4ptAbs):
         contacts.insertElement(Text("Gate/Top",va="top",ha="right",height=p/8.),layer=self.padLayer,angle=0,xy=rotatedXY1+center)      
         contacts.insertElement(Text("Gate/Bot",va="top",ha="center",height=p/8.),layer=self.padLayer,angle=0,xy=rotatedXY2+center)        
         
-        return W,D,p,ps,wp,length,angle,contacts  
+        return W,D,p,ps,wp,length,angle,contacts,erosion
     def getDefLayers(self):
         return super(BarClose4ptAbs_2Gate,self).getDefLayers().union(set([self.padLayer,self.contLayer,self.gateLayer]))
+        
+class Ebeam_test(BarClose2ptAbs):
+    def __init__(self,name,descriptor=None,**kwargs):     
+        self.descriptor=descriptor        
+        try:
+            self.kwargs
+        except:
+            self.kwargs={}
+            self.kwargs.update({
+            "padSpacing":160.,
+            "pad":150.,
+            "widthFine":0.25,
+            "widthCoarse":2.,
+            "contLength":2.,
+            "intLength":5.,
+            "contSpacing":0.2,
+            "wireOverlap":1.,
+            "widthAtPad":20.,
+            "textSpacing":40.,
+            "textHeight":40.,
+            "padLayer":1,
+            "contLayer":0,
+            "jointOverlap":1.,
+            "jointCircRadius":2.,
+            "coarseXOffset":1.25,
+            "coarseYOffset":1.25,
+            "radiusFineCorners":0.1,
+            "radiusCoarseCorners":0.125,            
+            "outerContSpacing":0.2,
+            "padYOffset":0., 
+            "padXOffset":0.,
+            "offsetAngle_inner":0.,            
+            "offsetAngle_outer":0.,
+            "plat":0,
+            "corr_Overexposure":0.,
+#            "rotation":0.,
+#            "debug":0.,            
+            })
+        super(Ebeam_test,self).__init__(name,descriptor=descriptor,**kwargs)
+            
+    def createText(self,contacts,text):
+        top,bot,center,d,length,angle=self.getCoords()  
+        text = "Not used"
+        super(Ebeam_test,self).createText(contacts,text)
+            
+    def make(self,oneSide=False):
+        W,D,p,ps,wp,length,angle,contacts,erosion=super(Ebeam_test,self).make()
+        top,bot,center,d,length,angle=self.getCoords()
+        ## HERE THE NEW STUFF GOES IN
+        W=self.widthFine
+        D=length/2.
+        ps=self.padSpacing
+        p=self.pad
+        wp=self.widthAtPad
+        cL=self.contLength
+        jCR=self.jointCircRadius
+        jO=self.jointOverlap
+        cO=self.wireOverlap
+        cS=self.contSpacing
+        cOX=self.coarseXOffset
+        cOY=self.coarseYOffset
+        radiusF=self.radiusFineCorners
+        pXO=-self.padXOffset
+#        if self.debug:        
+#            angle = self.rotation #Debugging
+        
+        #New stuff goes here
+        ocS=self.outerContSpacing
+        cS=cS+2.*W+2.*ocS
+
+        if (cOX == 0) & (cOY == 0): 
+            rotAngle = np.array([0])
+        elif cOX == 0:
+            if cOY<0:
+                rotAngle = np.array([-np.pi/2.])
+            else:
+                rotAngle = np.array([np.pi/2.])
+        elif cOX < 0:
+            rotAngle = np.arctan([-cOY/cOX])
+            rotAngle = np.pi-rotAngle
+        else:
+            rotAngle = np.arctan([cOY/cOX])
+            
+        armLength = np.sqrt(np.power(cOY,2)+np.power(cOX,2))
+
+        #Making the fine contacts
+        #Straight Section        
+        pts1=[[-cO,cS/2.],  #0-BL
+             [-cO,cS/2.+W], #1-TL
+             [cL,cS/2.+W],  #2-TR
+             [cL,cS/2.]]    #3-BR
+        #Rotated Section     
+        pts2=[[0,-W/2.],       #0-BL
+              [0,W/2.],        #1-TL
+              [armLength,W/2.],   #2-TR
+              [armLength,-W/2.]]  #3-BR
+              
+        pts2 = myRotate(np.array(pts2),180./np.pi*rotAngle[0])
+        pts2 = np.array(pts2)+[cL,cS/2.+W/2.] 
+        pts2 = pts2.tolist()            
+
+        if np.abs(rotAngle) == 0: #Avoid division by zero
+            points = [pts1[1]]+[pts2[2]]+[pts2[3]]+[pts1[0]]            
+        else:
+            points = [pts1[1]]+self.intersectPoint(pts1[1],pts1[2],pts2[1],pts2[2])+[pts2[2]]+[pts2[3]]+self.intersectPoint(pts1[3],pts1[0],pts2[3],pts2[0])+[pts1[0]]
+             
+        points=self.roundCorners(points,radiusF,10)
+        points=np.array(points)*[-1,1]       
+        points=self.erode(points,erosion)
+        p1b=[(pp[0],pp[1]) for pp in points] #Convert points to list        
+        p2b=myRotate(np.array(p1b),180)
+
+        self.createPads(contacts,(-pXO,ps/2.+p/2.),(-cL+jO-jCR/2.-cOX,cS/2.+W/2+cOY-jO+jCR/2.),offsetAngle=self.offsetAngle_outer+90)  
+
+        contacts.insertElement(Polygon(p1b),layer=self.contLayer,angle=angle,xy=center)
+        contacts.insertElement(Polygon(p2b),layer=self.contLayer,angle=angle,xy=center)
+
+        #Annotate the fine contact layer
+        rotatedXY1=np.array([(ps/2.+p/2),self.textSpacing/4])
+        rotatedXY2=np.array([-(ps/2.+p/2),self.textSpacing/4])
+        rotatedXY1 = myRotate(rotatedXY1,0)
+        rotatedXY2 = myRotate(rotatedXY2,0)
+        contacts.insertElement(Text("<-",va="top",ha="left",height=p/8.),layer=self.contLayer,angle=0,xy=rotatedXY1+center)        
+        contacts.insertElement(Text("->",va="top",ha="right",height=p/8.),layer=self.contLayer,angle=0,xy=rotatedXY2+center)
+
+        #Create writing
+        text = self.name.split("_")[0]+" Test Struct\n%.0fnm Width"%(self.widthFine*1000)+"\n%.0fnm Erosion"%(erosion*1000)
+        rotatedXY2=np.array([-self.padXOffset,-(ps/2.+p+self.textSpacing/4.)])
+        rotatedXY2 = myRotate(rotatedXY2,0)
+        contacts.insertElement(Text(text,va="top",ha="center",height=p/8.),layer=self.contLayer,angle=0,xy=rotatedXY2+center)
+
+        return W,D,p,ps,wp,length,angle,contacts,erosion  
+
+    def getDefLayers(self):
+        return super(Ebeam_test,self).getDefLayers().union(set([self.padLayer,self.contLayer]))
+
 
 allPatterns={"pn_Junction":pn_Junction,"pn_Antenna":pn_Antenna,"2PtContacts":Pt2Contacts,"Antenna":Antenna,"AntennaTriang":AntennaTriang,"4PtContacts":Pt4Contacts,"2Cont&Dots":Pt2ContactsDots,
              "Simple2Pt":Simple2Pt,"Simple4Pt":Simple4Pt,"Dots2Pt":Dots2Pt,"Dots4Pt":Dots4Pt,"Triangol4Pt":Triangol4Pt,
              "CPW":CPW,"CPW Contact":CPWContact,"Bent CPW":BentCPW,"Bent Contact CPW":BentCPWContact,
-             "Hall Contact":Hall,"2p+Gate":Gate2p,"RectBowtie":RectBowtie,"DirEmis5":DirEmis5,"DirEmis4":DirEmis4,"YagiUda":YagiUda,"Mod-dop_3gates":Gate3contacts4,"p4_center":p4_center,
+             "Hall Contact":Hall,"2p+Gate":Gate2p,"RectBowtie":RectBowtie,"DirEmis5":DirEmis5,"DirEmis4":DirEmis4,"YagiUda":YagiUda,"Mod-dop_3gates":Gate3contacts4,"p4_center":p4_center,"p4_center_pn":p4_center_pn,
              "Bar2Pt":Bar2Pt,"Bar4Pt":Bar4Pt,"Bar4PtTestStruct":Bar4PtTestStruct,
              "BarClose4pt_1Gate":BarClose4pt_1Gate, "BarClose4pt_2Gate":BarClose4pt_2Gate, "BarClose2pt":BarClose2pt, "BarClose4pt":BarClose4pt,
-             "BarClose2ptAbs":BarClose2ptAbs, "BarClose4ptAbs":BarClose4ptAbs, "BarClose4ptAbs_1Gate":BarClose4ptAbs_1Gate, "BarClose4ptAbs_2Gate":BarClose4ptAbs_2Gate}
-defaultPattern="BarClose4ptAbs_1Gate"
+             "BarClose2ptAbs":BarClose2ptAbs, "BarClose4ptAbs":BarClose4ptAbs, "BarClose4ptAbs_1Gate":BarClose4ptAbs_1Gate, "BarClose4ptAbs_2Gate":BarClose4ptAbs_2Gate,"Ebeam_test":Ebeam_test}
+defaultPattern="Ebeam_test"
 
 
 

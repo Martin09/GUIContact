@@ -386,7 +386,7 @@ class Cell(Structure):
     def createCircleMarker(self):
         CIRCLEMARKER=Structure("CircleMarker")
         elem=Circle(self.descriptor.markerSize)
-        CIRCLEMARKER.insertElement(elem,layer=self.descriptor.patternLayer)
+#        CIRCLEMARKER.insertElement(elem,layer=self.descriptor.patternLayer)
         return CIRCLEMARKER
         
     def __getFramePoints__(self):
@@ -453,9 +453,9 @@ class Cell(Structure):
             out.insertElement(PATTERN)
         else:
             self.insertElement(PATTERN)
-        PATTERN.insertElement(self.createFrame(details=details))
-        PATTERN.insertElement(self.createPattern(details=details))
-        PATTERN.insertElement(self.createExtents())
+#        PATTERN.insertElement(self.createFrame(details=details))
+#        PATTERN.insertElement(self.createPattern(details=details))
+#        PATTERN.insertElement(self.createExtents())
         if copy:
             return out
 #        self.insertElement(PATTERN)
@@ -710,7 +710,7 @@ class FlexiPattern(Block):
             out=self.copy()
         else:
             out = self
-        out.insertElement(Path(self.__getFramePath__()),layer=self.descriptor.commentLayer)
+#        out.insertElement(Path(self.__getFramePath__()),layer=self.descriptor.commentLayer)
         for block in out.getAllStructures(typ=Block):
             block.insertPatterns(details=details,copy=False)
         for cell in out.getAllStructures(typ=Cell):

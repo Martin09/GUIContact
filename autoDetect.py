@@ -25,7 +25,6 @@ latest_changes="""allowed to detect more than one circle per bit --> inverse mar
 #v0.982 - Martin Friedl - (Not Implemented Yet)
 #-Added Gaussian blur to median blur function
 #-Adaptive threshold constant from -10 to -15 (more aggressive)
-#-Turned on flood filling by default to compensate
 
 
 ##TODO make all these object more efficient / 
@@ -188,6 +187,7 @@ class ImageObject(object):
         self.bitsFound=None
             
         self.center=None
+        self.error=None
         self.angle=None
         self.scale=None
         self.transForm=None
@@ -195,7 +195,6 @@ class ImageObject(object):
         self.cell=None
         self.markers={}
         self.nanoWires=None
-    
         
     def __get_shape__(self):
         return self.IMG_gray.shape
@@ -266,6 +265,7 @@ class ImageObject(object):
                 raise RuntimeError("not possible if not initialized with path")
             else:
                 self.__IMG_gray__=None
+                self.__IMG_input__=None
         else:
             self.__load__()
         
@@ -431,13 +431,12 @@ class ImageObject(object):
             return "Could not resolve bitpattern"
         return "found markers in: %.3fms (%.3fms image trans)\n"%(((time.time()-t0)*1000),(t1-t0)*1000)+string2+string1
         
-        
     def findAllCircles(self,image=None,**kwargs):
         prep=self.prepareDetection(image,**kwargs)
         contours=self.findContours(prep,**kwargs)
         return self.findCircles(contours,retResiduals=False,**kwargs)
         
-    def findNanowires(self,image=None,minLength=5):
+    def findNanowires(self,image=None,minLength=3,maxLength=10):
         t0=time.time()
         if image is None:
             image=self.IMG_gray
@@ -451,7 +450,7 @@ class ImageObject(object):
 #        print contours
         for contour in contours:
             wire=WireObject(contour)
-            if wire.Length*self.scale > minLength and wire.Length*self.scale < min(self.descriptor.markerArea) and wire.Length > 2.* wire.Width:
+            if wire.Length*self.scale > minLength and wire.Length*self.scale < maxLength and wire.Length*self.scale < min(self.descriptor.markerArea) and wire.Length > 2.* wire.Width:
                 liste.append(WireObject(contour))
         self.nanoWires=liste
         return "found %d wires in: %.3fms (%.3fms adaptive threshold)\n"%((len(liste),(time.time()-t0)*1000,(t2-t1)*1000))
@@ -516,6 +515,7 @@ class ImageObject(object):
         transForm=self.descriptor.createTransformFunc(center,angle,scale)
         invTransForm=self.descriptor.createInverseTransformFunc(center,angle,scale)
         self.center=center
+        self.error=max(stdCenter[0],stdCenter[1])*scale*1000
         self.angle=angle
         self.scale=scale
         self.transForm=transForm
